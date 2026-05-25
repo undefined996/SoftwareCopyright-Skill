@@ -51,8 +51,6 @@ def build_candidates(project: Path) -> list[dict[str, Any]]:
             {
                 "path": rel(path, project),
                 "selected": False,
-                "start_line": 1,
-                "end_line": None,
                 "line_count": line_count,
                 "priority": priority,
                 "selection_tier": "frontend" if path.suffix.lower() in FRONTEND_EXTS else "supplement",
@@ -86,7 +84,7 @@ def write_selection_md(path: Path, data: dict[str, Any]) -> None:
         "请先确认要抽取哪些源码文件，再运行代码材料抽取。",
         "",
         "本清单只列出候选源码证据，不默认决定抽取文件。",
-        "模型需要先理解项目业务、页面入口和源码职责，再填写 `selected/start_line/end_line/model_reason`。",
+        "模型需要先理解项目业务、页面入口和源码职责，再填写 `selected/model_reason`。",
         f"当前已选约 {data['estimated_selected_pages']} 页，全部候选源码约 {data['estimated_all_candidate_pages']} 页。",
         "",
         "```text",
@@ -98,18 +96,17 @@ def write_selection_md(path: Path, data: dict[str, Any]) -> None:
         "",
         "1. 模型根据项目业务和代码入口选择最能体现软件功能的文件。",
         "2. 把需要抽取的文件设为 `selected: true`，并填写 `model_reason`。",
-        "3. 如只想抽取某个文件中间部分，可填写 `start_line` 和 `end_line`。",
+        "3. 代码材料按完整文件原样复制，不支持只抽取某个文件的中间行段。",
         "4. 用户确认模型选择后，再记录 `code-selection` 门禁。",
         "",
         "## 默认选中文件",
         "",
-        "| 文件 | 行数 | 抽取范围 | 模型选择理由 |",
-        "| --- | ---: | --- | --- |",
+        "| 文件 | 行数 | 模型选择理由 |",
+        "| --- | ---: | --- |",
     ]
     for item in data["files"]:
         if item.get("selected"):
-            end = item.get("end_line") or item.get("line_count")
-            lines.append(f"| `{item['path']}` | {item['line_count']} | {item['start_line']}-{end} | {item.get('model_reason') or '待模型填写'} |")
+            lines.append(f"| `{item['path']}` | {item['line_count']} | {item.get('model_reason') or '待模型填写'} |")
 
     lines.extend(["", "## 未选候选文件", "", "| 文件 | 行数 | 证据类型 |", "| --- | ---: | --- |"])
     for item in data["files"]:
@@ -159,7 +156,7 @@ def main() -> None:
         "supplement_rule": "模型优先选择能体现软件核心功能和真实运行逻辑的源码；不足60页时再从其他相关源码中补充；候选源码仍不足时才生成全部代码材料。",
         "confirmation_stage": "code-selection",
         "next_action": "请由模型填写 草稿/代码文件选择.json 的抽取选择和选择理由，再让用户确认；确认后运行 confirm_stage.py --stage code-selection。",
-        "instructions": "The script only inventories source files. The model must choose selected/start_line/end_line/model_reason before user confirmation.",
+        "instructions": "The script only inventories source files. The model must choose selected/model_reason before user confirmation. Selected files are copied in full.",
         "files": candidates,
     }
     write_json(out_dir / "代码文件选择.json", data)

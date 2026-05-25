@@ -9,7 +9,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from common import CODE_EXTS, COPYRIGHT_CODE_EXTS, FRONTEND_EXTS, count_text_lines, iter_project_files, read_json, read_text, rel, write_json, normalize_title
+from common import COPYRIGHT_CODE_EXTS, FRONTEND_EXTS, count_text_lines, is_known_config_file, iter_project_files, normalize_title, read_json, read_text, rel, write_json
 
 
 DEPENDENCY_FRAMEWORKS = {
@@ -94,11 +94,13 @@ def classify(path: Path, project: Path) -> str:
         return "page"
     if "/components/" in r:
         return "component"
-    if any(part in r for part in ("/api/", "/apis/", "/services/", "request.", "/request/")):
+    if any(part in r for part in ("/api/", "/apis/", "/services/", "request.", "/request/", "/controllers/", "/handlers/", "/views.py")):
         return "api"
+    if any(part in r for part in ("/models/", "/schemas/", "/entities/", "/repositories/", "/dao/")):
+        return "model"
     if any(part in r for part in ("/store/", "/stores/", "/pinia/", "/redux/", "/zustand/")):
         return "state"
-    if any(part in r for part in ("/utils/", "/lib/", "/hooks/", "/composables/")):
+    if any(part in r for part in ("/utils/", "/lib/", "/hooks/", "/composables/", "/helpers/")):
         return "utility"
     return "source"
 
@@ -133,9 +135,8 @@ def summarize_readme(project: Path) -> str:
 def analyze(project: Path) -> dict[str, Any]:
     project = project.resolve()
     package, package_path = load_package(project)
-    files = list(iter_project_files(project, COPYRIGHT_CODE_EXTS))
-    source_files = [p for p in files if p.suffix.lower() in FRONTEND_EXTS]
-    all_source_files = [p for p in files if p.suffix.lower() in COPYRIGHT_CODE_EXTS]
+    source_files = [p for p in iter_project_files(project, COPYRIGHT_CODE_EXTS) if not is_known_config_file(p)]
+    frontend_files = [p for p in source_files if p.suffix.lower() in FRONTEND_EXTS]
     class_counts: Counter[str] = Counter()
     extension_counts: Counter[str] = Counter()
     source_lines = 0
@@ -146,6 +147,7 @@ def analyze(project: Path) -> dict[str, Any]:
         "page": [],
         "component": [],
         "api": [],
+        "model": [],
         "state": [],
         "utility": [],
         "style": [],
@@ -158,12 +160,11 @@ def analyze(project: Path) -> dict[str, Any]:
         class_counts[category] += 1
         extension_counts[path.suffix.lower()] += 1
         categorized[category].append(rel(path, project))
-        source_lines += count_text_lines(path)
-        if category in {"route", "page", "entry"}:
+        source_lines += count_text_lines(path, skip_blank=False)
+        if path.suffix.lower() in FRONTEND_EXTS and category in {"route", "page", "entry"}:
             route_paths.extend(extract_route_paths(path))
 
-    for path in all_source_files:
-        total_source_lines += count_text_lines(path)
+    total_source_lines = source_lines
 
     package_name = ""
     scripts: dict[str, str] = {}
@@ -174,7 +175,7 @@ def analyze(project: Path) -> dict[str, Any]:
         for key in ("dependencies", "devDependencies"):
             dependencies.update({k: str(v) for k, v in (package.get(key) or {}).items()})
 
-    frameworks = detect_frameworks(package, source_files, project)
+    frameworks = detect_frameworks(package, frontend_files, project)
     language = infer_language(extension_counts, frameworks)
     route_paths = sorted(set(route_paths), key=lambda x: (x.count("/"), x))
 
@@ -194,7 +195,7 @@ def analyze(project: Path) -> dict[str, Any]:
         "source": {
             "file_count": len(source_files),
             "line_count": source_lines,
-            "total_file_count": len(all_source_files),
+            "total_file_count": len(source_files),
             "total_line_count": total_source_lines,
             "extension_counts": dict(sorted(extension_counts.items())),
             "category_counts": dict(sorted(class_counts.items())),
@@ -239,8 +240,24 @@ def infer_language(extension_counts: Counter[str], frameworks: list[str]) -> str
         langs.append("TypeScript")
     if extension_counts.get(".js") or extension_counts.get(".jsx"):
         langs.append("JavaScript")
+    language_by_ext = {
+        ".py": "Python",
+        ".java": "Java",
+        ".go": "Go",
+        ".rs": "Rust",
+        ".cs": "C#",
+        ".php": "PHP",
+        ".rb": "Ruby",
+        ".kt": "Kotlin",
+        ".swift": "Swift",
+        ".sql": "SQL",
+        ".sh": "Shell",
+    }
+    for ext, label in language_by_ext.items():
+        if extension_counts.get(ext):
+            langs.append(label)
     if not langs:
-        langs = [ext.lstrip(".").upper() for ext, _ in extension_counts.most_common(3)]
+        langs = [ext.lstrip(".").upper() for ext, _ in extension_counts.most_common(3) if ext]
     return "、".join(dict.fromkeys(langs)) or "待用户确认"
 
 
@@ -337,9 +354,9 @@ def main() -> None:
     print(f"Frameworks: {', '.join(result['frameworks']) or 'unknown'}")
     print(f"Language: {result['language']}")
     print(f"Source files: {result['source']['file_count']}")
-    print(f"Source lines (non-blank): {result['source']['line_count']}")
+    print(f"Source lines: {result['source']['line_count']}")
     print(f"Total source files: {result['source']['total_file_count']}")
-    print(f"Total source lines (non-blank): {result['source']['total_line_count']}")
+    print(f"Total source lines: {result['source']['total_line_count']}")
 
 
 if __name__ == "__main__":

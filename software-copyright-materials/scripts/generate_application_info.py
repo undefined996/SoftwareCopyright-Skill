@@ -227,7 +227,20 @@ def project_version_candidate(analysis: dict[str, Any]) -> str:
 
 
 def version_confirmation_hint(analysis: dict[str, Any], requested_version: str) -> str:
+    project_version = project_version_candidate(analysis)
     requested = normalize_version_label(requested_version or "V1.0")
+    if project_version and version_less_than_1(project_version):
+        return (
+            f"待用户确认（项目版本号为 {project_version}，软著首次提交通常建议从 V1.0 开始；"
+            f"请确认填写 V1.0 还是 {project_version}）"
+        )
+    if not project_version and version_less_than_1(requested):
+        return (
+            f"待用户确认（当前建议版本号为 {requested}，软著首次提交通常建议从 V1.0 开始；"
+            f"请确认填写 V1.0 还是 {requested}）"
+        )
+    if project_version and project_version != requested:
+        return f"待用户确认（项目版本号为 {project_version}，当前建议为 {requested}；请确认最终申报版本号）"
     return f"待用户确认（建议：{requested}；请确认最终版本号）"
 
 
@@ -457,7 +470,7 @@ def write_application_md(path: Path, fields: dict[str, str], analysis: dict[str,
             f"- 项目目录：{analysis.get('project_root', '')}",
             f"- 框架：{'、'.join(analysis.get('frameworks') or []) or '未识别'}",
             f"- 源码文件数：{analysis.get('source', {}).get('total_file_count', analysis.get('source', {}).get('file_count', 0))}",
-            f"- 源程序量（非空行）：{analysis.get('source', {}).get('total_line_count', analysis.get('source', {}).get('line_count', 0))}",
+            f"- 源程序量（含空行）：{analysis.get('source', {}).get('total_line_count', analysis.get('source', {}).get('line_count', 0))}",
             f"- 代码材料页数：{manifest.get('total_pages', 0)}",
             f"- 代码输出模式：{manifest.get('mode', '')}",
             f"- 业务理解：{'已读取 草稿/业务理解.json' if business else '未提供，使用项目分析兜底'}",
