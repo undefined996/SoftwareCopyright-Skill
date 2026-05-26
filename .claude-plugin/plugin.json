@@ -7,10 +7,7 @@
     "url": "https://github.com/Fokkyp"
   },
   "homepage": "https://github.com/Fokkyp/SoftwareCopyright-Skill",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Fokkyp/SoftwareCopyright-Skill"
-  },
+  "repository": "https://github.com/Fokkyp/SoftwareCopyright-Skill",
   "license": "MIT",
   "keywords": ["software-copyright", "chinese-copyright", "docx", "软著", "著作权"]
 }
