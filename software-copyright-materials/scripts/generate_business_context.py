@@ -177,8 +177,34 @@ def write_model_template(path: Path, evidence: dict[str, Any]) -> None:
                 "include_operation_flow": False,
             }
         ],
+        "manual_modules": [
+            {
+                "title": "真实页面或核心流程名称",
+                "evidence": ["页面、路由、组件、README 或需求文档路径"],
+                "purpose": "该页面或流程在当前软件中的用途。",
+                "usage": "用户在什么业务场景下会使用该页面，正在处理什么具体事务。",
+                "entry": "用户从哪里进入该页面或流程。",
+                "visible_elements": ["用户实际能看到的输入框、按钮、列表、状态或结果区域"],
+                "operation_steps": ["按真实页面顺序描述用户动作，不写代码实现。"],
+                "validation_rules": ["输入限制、必填项、额度、权限、异常提示等规则；没有则留空数组。"],
+                "feedback": ["操作完成后用户能看到的结果、提示或状态变化。"],
+                "screenshot": "截图预留说明",
+            }
+        ],
+        "system_requirements": [
+            {"item": "操作系统", "minimum": "按项目实际填写", "recommended": "按项目实际填写"},
+            {"item": "浏览器或客户端", "minimum": "按项目实际填写", "recommended": "按项目实际填写"},
+        ],
+        "faq": [
+            {"question": "按当前软件真实使用场景填写常见问题", "answer": "给出面向普通用户的处理方法。"}
+        ],
+        "glossary": [
+            {"term": "当前软件中的业务术语", "definition": "用普通中文解释含义。"}
+        ],
         "model_review_notes": [
-            "不要照抄范本结构；按当前项目业务组织章节。",
+            "操作手册应采用软著审核友好的通用骨架：相关文档、说明、功能特点、系统要求、按真实页面/流程逐章操作、常见问题、术语表。",
+            "manual_modules 要按当前项目真实页面、导航入口、按钮、输入限制、系统反馈和截图位置编写，不能只写抽象功能名。",
+            "不要照抄范本文案；范本只说明手册需要具体、可操作、能给审核员看懂。",
             "不要用关键词表决定行业和功能；必须能从项目证据或用户补充中解释来源。",
         ],
     }
@@ -219,6 +245,40 @@ def normalize_model_context(model: dict[str, Any], evidence: dict[str, Any], web
     sections = model.get("manual_sections") or []
     if sections and not isinstance(sections, list):
         raise SystemExit("Model context field must be a list: manual_sections")
+    manual_modules = model.get("manual_modules") or []
+    if manual_modules and not isinstance(manual_modules, list):
+        raise SystemExit("Model context field must be a list: manual_modules")
+    if not manual_modules:
+        raise SystemExit("Model context field cannot be empty: manual_modules")
+    for index, module in enumerate(manual_modules, start=1):
+        if not isinstance(module, dict):
+            raise SystemExit(f"manual_modules item {index} must be an object")
+        title = str(module.get("title") or module.get("feature") or "").strip()
+        for field in ("purpose", "usage", "entry", "operation_steps", "feedback"):
+            value = module.get(field)
+            if field == "usage" and not str(value or "").strip():
+                value = module.get("usage_scenario")
+            if isinstance(value, list):
+                missing_value = not any(str(item).strip() for item in value)
+            else:
+                missing_value = not str(value or "").strip()
+            if missing_value:
+                raise SystemExit(f"manual_modules item {index} ({title or 'untitled'}) missing field: {field}")
+    system_requirements = model.get("system_requirements") or []
+    if system_requirements and not isinstance(system_requirements, list):
+        raise SystemExit("Model context field must be a list: system_requirements")
+    if not system_requirements:
+        raise SystemExit("Model context field cannot be empty: system_requirements")
+    faq = model.get("faq") or []
+    if faq and not isinstance(faq, list):
+        raise SystemExit("Model context field must be a list: faq")
+    if not faq:
+        raise SystemExit("Model context field cannot be empty: faq")
+    glossary = model.get("glossary") or []
+    if glossary and not isinstance(glossary, list):
+        raise SystemExit("Model context field must be a list: glossary")
+    if not glossary:
+        raise SystemExit("Model context field cannot be empty: glossary")
     context = {
         "software_name": evidence["software_name"],
         "business_understanding_required": True,
@@ -237,6 +297,10 @@ def normalize_model_context(model: dict[str, Any], evidence: dict[str, Any], web
         "software_technical_option": str(model.get("software_technical_option") or "应用软件"),
         "software_category": str(model.get("software_category") or "应用软件"),
         "manual_sections": sections,
+        "manual_modules": manual_modules,
+        "system_requirements": system_requirements,
+        "faq": faq,
+        "glossary": glossary,
         "model_authored": True,
         "external_research_notes": web_notes,
         "confirmation_required": True,
@@ -245,7 +309,7 @@ def normalize_model_context(model: dict[str, Any], evidence: dict[str, Any], web
         "next_action": "请确认 草稿/业务理解.md 中的软件用途、行业、目标用户、核心功能、手册结构和申请口径；确认后运行 confirm_stage.py --stage business。",
         "review_notes": [
             "请确认模型判断的行业领域、目标用户和主要功能是否符合实际申报口径。",
-            "请确认操作手册结构是否适合当前项目，而不是套用范本文档。",
+            "请确认操作手册结构是否按真实页面和流程展开，而不是套用抽象功能列表。",
         ],
     }
     return context
@@ -282,6 +346,21 @@ def write_context_md(path: Path, context: dict[str, Any]) -> None:
                 title = str(section)
                 intent = ""
             lines.append(f"{i}. {title}" + (f"：{intent}" if intent else ""))
+    if context.get("manual_modules"):
+        lines.extend(["", "## 操作手册页面/流程模块", ""])
+        for i, module in enumerate(context["manual_modules"], start=1):
+            if not isinstance(module, dict):
+                lines.append(f"{i}. {module}")
+                continue
+            title = module.get("title") or module.get("feature") or f"模块 {i}"
+            usage = module.get("usage") or module.get("usage_scenario") or ""
+            entry = module.get("entry") or ""
+            steps = module.get("operation_steps") or module.get("steps") or []
+            lines.append(f"{i}. {title}" + (f"：{entry}" if entry else ""))
+            if usage:
+                lines.append(f"   - 使用场景：{usage}")
+            if steps:
+                lines.append(f"   - 操作要点：{'；'.join(str(item) for item in steps[:4])}")
     lines.extend(
         [
             "",

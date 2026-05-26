@@ -475,6 +475,71 @@ def normalize_docx_text_color(docx_path: Path) -> None:
     tmp_path.replace(docx_path)
 
 
+def next_header_part(names: set[str]) -> tuple[str, str]:
+    index = 1
+    while f"word/header{index}.xml" in names:
+        index += 1
+    return f"word/header{index}.xml", f"header{index}.xml"
+
+
+def unique_relationship_id(rels_xml: str, base: str = "rIdManualHeader") -> str:
+    if f'Id="{base}"' not in rels_xml:
+        return base
+    index = 2
+    while f'Id="{base}{index}"' in rels_xml:
+        index += 1
+    return f"{base}{index}"
+
+
+def add_header_to_existing_docx(docx_path: Path, header_text: str) -> None:
+    """Add the same two-column header used by code materials to an existing DOCX."""
+    tmp_path = docx_path.with_suffix(docx_path.suffix + ".tmp")
+    with zipfile.ZipFile(docx_path, "r") as src:
+        names = set(src.namelist())
+        header_part, header_target = next_header_part(names)
+        rels_xml = src.read("word/_rels/document.xml.rels").decode("utf-8")
+        rel_id = unique_relationship_id(rels_xml)
+
+        with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as dst:
+            for item in src.infolist():
+                data = src.read(item.filename)
+                if item.filename == "[Content_Types].xml":
+                    text = data.decode("utf-8")
+                    override = (
+                        f'<Override PartName="/{header_part}" '
+                        'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>'
+                    )
+                    if f'PartName="/{header_part}"' not in text:
+                        text = text.replace("</Types>", f"{override}</Types>")
+                    data = text.encode("utf-8")
+                elif item.filename == "word/_rels/document.xml.rels":
+                    text = data.decode("utf-8")
+                    relationship = (
+                        f'<Relationship Id="{rel_id}" '
+                        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" '
+                        f'Target="{header_target}"/>'
+                    )
+                    text = text.replace("</Relationships>", f"{relationship}</Relationships>")
+                    data = text.encode("utf-8")
+                elif item.filename == "word/document.xml":
+                    text = data.decode("utf-8")
+                    if "xmlns:r=" not in text:
+                        text = text.replace(
+                            "<w:document ",
+                            '<w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ',
+                            1,
+                        )
+                    header_ref = f'<w:headerReference w:type="default" r:id="{rel_id}"/>'
+                    if "<w:headerReference" in text:
+                        text = re.sub(r"<w:headerReference\b[^>]*/>", header_ref, text, count=1)
+                    else:
+                        text = re.sub(r"(<w:sectPr\b[^>]*>)", rf"\1{header_ref}", text, count=1)
+                    data = text.encode("utf-8")
+                dst.writestr(item, data)
+            dst.writestr(header_part, header_xml(header_text))
+    tmp_path.replace(docx_path)
+
+
 def build_code_docx_ooxml(md_path: Path, out_path: Path, software_name: str, version: str) -> None:
     pages = parse_code_pages(md_path)
     if not pages:
@@ -519,11 +584,12 @@ def add_image(document: Any, image_path: Path) -> None:
         set_run_font(run, "SimSun", 10.5)
 
 
-def build_manual_docx_python(md_path: Path, out_path: Path, base_dir: Path) -> None:
+def build_manual_docx_python(md_path: Path, out_path: Path, base_dir: Path, software_name: str, version: str) -> None:
     document = Document()
     configure_a4(document)
     set_normal_font(document, "SimSun", 10.5)
     set_style_black(document)
+    set_code_header(document, software_name, version)
     lines = md_path.read_text(encoding="utf-8").splitlines()
     table_buf: list[list[str]] = []
     in_fence = False
@@ -620,11 +686,12 @@ def build_code_docx(md_path: Path, out_path: Path, software_name: str, version: 
     normalize_docx_text_color(out_path)
 
 
-def build_manual_docx(md_path: Path, out_path: Path, base_dir: Path) -> None:
+def build_manual_docx(md_path: Path, out_path: Path, base_dir: Path, software_name: str, version: str) -> None:
     if DOCX_AVAILABLE:
-        build_manual_docx_python(md_path, out_path, base_dir)
+        build_manual_docx_python(md_path, out_path, base_dir, software_name, version)
     else:
         build_with_pandoc(md_path, out_path, code_mode=False)
+        add_header_to_existing_docx(out_path, f"{software_name} {version}")
     normalize_docx_text_color(out_path)
 
 
@@ -712,7 +779,7 @@ def build_all(workdir: Path, software_name: str, version: str, skip_preview: boo
                 tmp_manual = Path(tmp.name)
             manual_source = tmp_manual
         try:
-            build_manual_docx(manual_source, manual_out, draft_dir)
+            build_manual_docx(manual_source, manual_out, draft_dir, final_software_name, final_version)
         finally:
             if tmp_manual:
                 tmp_manual.unlink(missing_ok=True)
