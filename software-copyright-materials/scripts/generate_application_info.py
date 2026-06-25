@@ -151,7 +151,7 @@ def summarize_features(analysis: dict[str, Any], software_name: str, business: d
 
     When business context JSON provides main_functions it will be used upstream; this
     function is a fallback that assembles the best available evidence into a multi-
-    paragraph description targeting the 500-1300 character window required by the
+    paragraph description targeting the 500-1300 Chinese-character window required by the
     Chinese copyright office.
     """
     business_summary = summarize_business_features(software_name, business)
@@ -595,9 +595,9 @@ def write_application_md(path: Path, fields: dict[str, str], analysis: dict[str,
     if main_func and "待用户确认" not in main_func:
         func_len = len(str(main_func).replace(" ", "").replace("\n", ""))
         if func_len < MIN_MAIN_FUNCTION_CHARS:
-            warnings.append(f"软件的主要功能仅有 {func_len} 字符，应不少于 {MIN_MAIN_FUNCTION_CHARS} 字符。请扩写功能说明。")
+            warnings.append(f"软件的主要功能仅有 {func_len} 字，应不少于 {MIN_MAIN_FUNCTION_CHARS} 字。请扩写功能说明。")
         elif func_len > MAX_MAIN_FUNCTION_CHARS:
-            warnings.append(f"软件的主要功能共 {func_len} 字符，超过建议上限 {MAX_MAIN_FUNCTION_CHARS} 字符。请精简。")
+            warnings.append(f"软件的主要功能共 {func_len} 字，超过建议上限 {MAX_MAIN_FUNCTION_CHARS} 字。请精简。")
 
     # Check character limits for fields with ≤50 or ≤100 constraints
     char_limit_fields = {
@@ -637,7 +637,7 @@ def write_application_md(path: Path, fields: dict[str, str], analysis: dict[str,
             "- 源程序量：纯数字（不含'行'字），指全部源程序的总行数。",
             "- 开发目的：≤50字符，用一句话说明目的，不能只写软件名称。",
             "- 面向领域 / 行业：≤50字符。",
-            "- 软件的主要功能：500~1300字符。",
+            "- 软件的主要功能：500~1300字。",
             "- 软件的技术特点：多选标签（APP/游戏软件/教育软件/金融软件/医疗软件/地理信息软件/云计算软件/信息安全软件/大数据软件/人工智能软件/VR软件/5G软件/小程序/物联网软件/智慧城市软件）+ 文本描述≤100字符。",
             "",
             "## 项目分析摘要",

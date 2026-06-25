@@ -11,6 +11,10 @@ from typing import Any
 from common import read_json, write_json
 
 
+MAIN_FUNCTION_MIN_CHARS = 500
+MAIN_FUNCTION_MAX_CHARS = 1300
+
+
 def timestamp() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -32,6 +36,39 @@ def pending_application_fields(md_path: Path) -> list[str]:
     if not md_path.exists():
         return [f"缺少 {md_path}"]
     return [line.strip() for line in md_path.read_text(encoding="utf-8").splitlines() if "待用户确认" in line]
+
+
+def effective_len(value: str) -> int:
+    return len(str(value or "").replace(" ", "").replace("\n", ""))
+
+
+def application_field_value(md_path: Path, field_name: str) -> str:
+    prefix = f"➤{field_name}："
+    for line in md_path.read_text(encoding="utf-8").splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :].strip()
+    return ""
+
+
+def application_field_issues(md_path: Path) -> list[str]:
+    issues = pending_application_fields(md_path)
+    if not md_path.exists():
+        return issues
+
+    main_function = application_field_value(md_path, "软件的主要功能")
+    if not main_function:
+        issues.append("➤软件的主要功能：缺少填写内容，请填写 500~1300 字。")
+    elif "待用户确认" not in main_function:
+        count = effective_len(main_function)
+        if count < MAIN_FUNCTION_MIN_CHARS:
+            issues.append(
+                f"➤软件的主要功能：当前 {count} 字，少于 {MAIN_FUNCTION_MIN_CHARS} 字，请扩写至 500~1300 字。"
+            )
+        elif count > MAIN_FUNCTION_MAX_CHARS:
+            issues.append(
+                f"➤软件的主要功能：当前 {count} 字，超过 {MAIN_FUNCTION_MAX_CHARS} 字，请精简至 500~1300 字。"
+            )
+    return issues
 
 
 def confirm_environment(workdir: Path, note: str) -> Path:
@@ -106,12 +143,12 @@ def confirm_screenshot_method(workdir: Path, note: str, method: str) -> Path:
 
 
 def confirm_application_fields(workdir: Path, note: str) -> Path:
-    pending = pending_application_fields(workdir / "草稿/申请表信息.md")
-    if pending:
+    issues = application_field_issues(workdir / "草稿/申请表信息.md")
+    if issues:
         raise SystemExit(
             "STOP_FOR_USER\n"
-            "NEXT_ACTION: 申请表信息仍包含“待用户确认”。请先补全字段，再重新确认。\n"
-            + "\n".join(f"- {item}" for item in pending[:20])
+            "NEXT_ACTION: 申请表信息仍有字段未满足要求。请先补全或修正字段，再重新确认。\n"
+            + "\n".join(f"- {item}" for item in issues[:20])
         )
     out_path = workdir / "草稿/申请表字段确认.json"
     data = load_json_or_empty(out_path)
@@ -134,9 +171,9 @@ def confirm_markdown(workdir: Path, note: str) -> Path:
         issues.append("截图方式尚未确认")
     if not fields.exists() or not read_json(fields).get("application_fields_confirmed"):
         issues.append("申请表字段尚未确认")
-    pending = pending_application_fields(workdir / "草稿/申请表信息.md")
-    if pending:
-        issues.append("申请表信息仍包含“待用户确认”")
+    field_issues = application_field_issues(workdir / "草稿/申请表信息.md")
+    if field_issues:
+        issues.append("申请表信息仍有字段未满足要求")
 
     if issues:
         raise SystemExit(

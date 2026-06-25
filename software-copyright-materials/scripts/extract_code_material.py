@@ -74,10 +74,10 @@ def should_skip_file(path: Path) -> bool:
 
 def selected_line_estimate(item: dict[str, Any]) -> int:
     try:
-        total = int(item.get("line_count") or 0)
+        total = int(item.get("material_line_count") or item.get("line_count") or 0)
     except (TypeError, ValueError):
         total = 0
-    return total + 2 if total > 0 else 0
+    return total + 1 if total > 0 else 0
 
 
 def available_pages_from_selection(selection_path: Path | None, lines_per_page: int) -> tuple[int, int, int]:
@@ -95,6 +95,10 @@ def available_pages_from_selection(selection_path: Path | None, lines_per_page: 
 
 def marker_for(path: Path, project: Path) -> str:
     return f"// File: {rel(path, project)}"
+
+
+def material_code_lines(text: str) -> list[str]:
+    return [line for line in text.splitlines() if line.strip()]
 
 
 def load_selected_files(project: Path, selection_path: Path | None) -> list[dict[str, Any]]:
@@ -146,18 +150,20 @@ def collect_code_lines(project: Path, selection_path: Path | None) -> tuple[list
             continue
         text = read_text(path)
         source_lines = text.splitlines()
-        selected_lines = source_lines
+        selected_lines = material_code_lines(text)
+        if not selected_lines:
+            continue
         start = len(all_lines) + 1
         marker = marker_for(path, project)
         all_lines.append(marker)
         all_lines.extend(selected_lines)
-        all_lines.append("")
         end = len(all_lines)
         source_end_line = len(source_lines)
         manifest_files.append(
             {
                 "path": rel(path, project),
                 "source_line_count": len(source_lines),
+                "blank_line_count": len(source_lines) - len(selected_lines),
                 "selected_line_start": 1,
                 "selected_line_end": source_end_line,
                 "selected_line_count": len(selected_lines),

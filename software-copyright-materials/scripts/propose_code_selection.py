@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from common import COPYRIGHT_CODE_EXTS, FRONTEND_EXTS, ensure_dir, is_known_config_file, iter_project_files, read_json, rel, write_json
-from extract_code_material import LINES_PER_PAGE, SPLIT_THRESHOLD_PAGES, category_weight, should_skip_file
+from extract_code_material import LINES_PER_PAGE, SPLIT_THRESHOLD_PAGES, category_weight, material_code_lines, should_skip_file
 
 
 DEFAULT_MAX_FILES = 0
@@ -43,15 +43,19 @@ def build_candidates(project: Path) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for path in files:
         try:
-            line_count = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+            text = path.read_text(encoding="utf-8", errors="replace")
+            line_count = len(text.splitlines())
+            material_line_count = len(material_code_lines(text))
         except Exception:
             line_count = 0
+            material_line_count = 0
         priority, _ = category_weight(path, project)
         candidates.append(
             {
                 "path": rel(path, project),
                 "selected": False,
                 "line_count": line_count,
+                "material_line_count": material_line_count,
                 "priority": priority,
                 "selection_tier": "frontend" if path.suffix.lower() in FRONTEND_EXTS else "supplement",
                 "evidence": evidence_for(path, project),
@@ -62,7 +66,8 @@ def build_candidates(project: Path) -> list[dict[str, Any]]:
 
 
 def selected_line_estimate(item: dict[str, Any]) -> int:
-    return int(item.get("line_count") or 0) + 2
+    total = int(item.get("material_line_count") or item.get("line_count") or 0)
+    return total + 1 if total > 0 else 0
 
 
 def selection_stats(candidates: list[dict[str, Any]]) -> dict[str, int]:
@@ -96,7 +101,7 @@ def write_selection_md(path: Path, data: dict[str, Any]) -> None:
         "",
         "1. 模型根据项目业务和代码入口选择最能体现软件功能的文件。",
         "2. 把需要抽取的文件设为 `selected: true`，并填写 `model_reason`。",
-        "3. 代码材料按完整文件原样复制，不支持只抽取某个文件的中间行段。",
+        "3. 代码材料按完整文件抽取并去除纯空行，不支持只抽取某个文件的中间行段。",
         "4. 用户确认模型选择后，再记录 `code-selection` 门禁。",
         "",
         "## 默认选中文件",
@@ -156,7 +161,7 @@ def main() -> None:
         "supplement_rule": "模型优先选择能体现软件核心功能和真实运行逻辑的源码；不足60页时再从其他相关源码中补充；候选源码仍不足时才生成全部代码材料。",
         "confirmation_stage": "code-selection",
         "next_action": "请由模型填写 草稿/代码文件选择.json 的抽取选择和选择理由，再让用户确认；确认后运行 confirm_stage.py --stage code-selection。",
-        "instructions": "The script only inventories source files. The model must choose selected/model_reason before user confirmation. Selected files are copied in full.",
+        "instructions": "The script only inventories source files. The model must choose selected/model_reason before user confirmation. Selected files are extracted in full with blank-only lines removed.",
         "files": candidates,
     }
     write_json(out_dir / "代码文件选择.json", data)
